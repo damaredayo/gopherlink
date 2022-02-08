@@ -1,0 +1,95 @@
+syntax = "proto3";
+package database;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/damaredayo/gopherlink/proto";
+
+message Status {
+    int64 ok = 1;
+    PlayStatus playing = 2;
+    Usage usage = 3;
+}
+
+message Usage {
+    float ram = 1;
+    float cpu = 2;
+}
+
+enum PlayStatus {
+    STOPPED = 0;
+    PLAYING = 1;
+    PAUSED = 2;
+}
+
+enum SeekType {
+    TO_DURATION = 0;
+    ADD_DURATION = 1;
+    REMOVE_DURATION = 2;
+}
+
+message NowPlayingRequest {
+    string guild_id = 1;
+    PlayStatus playing = 2;
+    int64 duration = 3;
+    int64 elapsed = 4;
+}
+
+message SeekRequest {
+    int64 duration = 1;
+    SeekType type = 2;
+}
+
+message SongInfo {
+    string guild_id = 1;
+    PlayStatus playing = 2;
+    int64 duration = 3;
+    int64 elapsed = 4;
+    string author = 5;
+    string title = 6;
+}
+
+message SongRequest {
+    string URL = 1;
+    string guild_id = 2;
+}
+message SongAdded {
+    SongRequest song = 1;
+    SongInfo info = 2;
+}
+
+message SongRemoved {
+    SongRequest song = 1;
+    int64 ok = 2;
+}
+
+message DiscordVoiceServer {
+    string token = 1;
+    string guild_id = 2;
+    string user_id = 3;
+    string endpoint = 4;
+    string session_id = 5;
+}
+
+message Player {
+    string guild_id = 1;
+    PlayStatus playing = 2;
+}
+
+message PlayerResponse {
+    int64 ok = 1;
+    Player player = 2;
+}
+
+service Gopherlink {
+    rpc GetStatusStream (google.protobuf.Empty) returns (stream Status) {}
+
+    rpc CreatePlayer (DiscordVoiceServer) returns (PlayerResponse) {}
+
+    rpc AddSong (SongRequest) returns (SongAdded) {}
+    rpc RemoveSong (SongRequest) returns (SongRemoved) {}
+    rpc NowPlaying (NowPlayingRequest) returns (SongInfo) {}
+    
+    rpc Seek (SeekRequest) returns (SongInfo) {}
+
+}
