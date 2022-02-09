@@ -3,20 +3,19 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
+	"io/ioutil"
 	"log"
-	"net"
-	"os"
 	"time"
 
-	"github.com/damaredayo/goydl"
-	"github.com/xfrr/goffmpeg/transcoder"
+	fluentffmpeg "github.com/damaredayo/go-fluent-ffmpeg"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/hraban/opus.v2"
 )
 
-func (v *VoiceConnection) createOpus(udp *net.UDPConn, close <-chan int, rate int, size int) {
+func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size int) {
 
-	if udp == nil || close == nil {
+	if v.udp == nil || udpclose == nil {
 		return
 	}
 
@@ -45,26 +44,24 @@ func (v *VoiceConnection) createOpus(udp *net.UDPConn, close <-chan int, rate in
 
 	const sampleRate = 48000
 	const channels = 2
-
-	//c, err := oto.NewContext(48000, 2, 2, 16384)
-	//if err != nil {
-	//	log.Panicln(err)
-	//}
-	//p := c.NewPlayer()
 	a := 0
-	log.Println("starting opus...")
+	log.Printf("Opening opus sender")
 	for {
 		select {
-		case <-close:
+		case <-udpclose:
 			return
-		case recvbuf, ok = <-v.OpusSend:
-			a++
-			if !ok {
+		case <-ticker.C:
+			select {
+			case recvbuf, ok = <-v.OpusSend:
+				a++
+				if !ok {
+					return
+				}
+
+			default:
 				continue
 			}
 		}
-
-		//p.Write(recvbuf)
 
 		v.Mutex.RLock()
 		speaking := v.Speaking
@@ -82,16 +79,8 @@ func (v *VoiceConnection) createOpus(udp *net.UDPConn, close <-chan int, rate in
 		copy(nonce[:], udpHeader)
 		v.Mutex.RLock()
 		sendbuf := secretbox.Seal(udpHeader, recvbuf, &nonce, &v.op4.SecretKey)
+		_, err := v.udp.Write(sendbuf)
 		v.Mutex.RUnlock()
-
-		select {
-		case <-close:
-			return
-		case <-ticker.C:
-			// continue
-		}
-		_, err := udp.Write(sendbuf)
-		log.Printf("sent %v, ok:%v", a, ok)
 		if err != nil {
 			log.Println("A", err)
 		}
@@ -115,65 +104,67 @@ func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size i
 	v.paused = false
 	const channels = 2
 
+	//pcmbuf := make([]int16, size*2)
+
+	packet_size := size * channels
+	bufsize := packet_size * 2 // *2 because []int16 to byte costs 2 bytes per entry
+
 	ticker := time.NewTicker(time.Millisecond * time.Duration(size/(rate/1000)))
 	log.Println("ticker", (time.Millisecond * time.Duration(size/(rate/1000))).String())
 
-	//pcmbuf := make([]int16, size*2)
-
-	pcmsize := size * channels
-	bufsize := pcmsize * 2 // *2 because []int16 to byte costs 2 bytes per entry
-
 	enc, err := opus.NewEncoder(48000, 2, opus.AppAudio)
 	if err != nil {
-		log.Panicln("q", err)
+		log.Panicf("failed to make opus encoder %v\n", err)
 	}
 	a := 0
 	defer ticker.Stop()
+
+	pcmlen := len(pcm)
+
 	for {
-		a++
-		log.Println("music sending ", a)
 		select {
 		case <-udpclose:
 			log.Println("music player udpclose called")
 			return
 		default:
-			if v.paused {
-				break
-			}
+			var perc float64 = float64(a) / float64(pcmlen)
+			log.Printf("\rmusic sending %v, %v left to go (%.2f%%)", a, len(pcm), perc*100)
 			if v.Reconnecting || v.OpusSend == nil {
 				log.Printf("music player: reconnecting... (v.Reconnecting=%v, v.OpusSend=%v", v.Reconnecting, v.OpusSend)
 			}
 			for {
-				if len(pcm) >= pcmsize {
-					pcmbuf := pcm[:pcmsize]
-					pcm = pcm[pcmsize:]
+				if len(pcm) >= packet_size {
+					a += packet_size
+					pcmbuf := pcm[:packet_size]
+					pcm = pcm[packet_size:]
 
-					frameSizeMs := float32(pcmsize) / channels * 1000 / 48000
+					frameSizeMs := float32(packet_size) / channels * 1000 / 48000
 					switch frameSizeMs {
 					case 2.5, 5, 10, 20, 40, 60:
 
 					default:
-						log.Printf("Illegal frame size: %d bytes (%f ms)", pcmsize, frameSizeMs)
+						log.Printf("Illegal frame size: %d bytes (%f ms)", packet_size, frameSizeMs)
 					}
 
 					data := make([]byte, bufsize)
 					n, err := enc.Encode(pcmbuf, data)
 					if err != nil {
-						log.Panicln("q", err)
+						log.Panicf("failed to encode pcm data into opus: %v\n", err)
 					}
-					log.Println("sending ", a)
 					for v.Reconnecting || v.OpusSend == nil {
 						time.Sleep(100 * time.Millisecond)
 						log.Println("reconnecting", v.Reconnecting)
 					}
 
-					if !v.Reconnecting {
-						go func() {
-							v.OpusSend <- data[:n]
-						}()
-					}
-					break
+					go func() {
+						v.OpusSend <- data[:n]
+					}()
 
+					break
+				}
+				if len(pcm) < packet_size {
+					v.Playing = false
+					return
 				}
 
 			}
@@ -185,64 +176,52 @@ func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size i
 			log.Println("music player udpclose called")
 			return
 		case <-ticker.C:
-			//fmt.Println("continue: ", <-ticker.C)
 		}
 
 	}
 }
 
-func aacToPCM() (pcm []int16, sampleRate int) {
-	t := new(transcoder.Transcoder)
-	err := t.Initialize("./yes.m4a", "pcm.pcm")
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	t.MediaFile().SetAudioCodec("pcm_s16le")
-	t.MediaFile().SetOutputFormat("s16le")
-	t.MediaFile().SetAudioRate(48000)
+func aacToPCM(in interface{}) (pcm []int16, sampleRate int) {
 	sampleRate = 48000
 
-	done := t.Run(true)
-	progress := t.Output()
+	var bytesReader *bytes.Reader
 
-	for msg := range progress {
-		log.Printf("%+v\n", msg)
-	}
-
-	err = <-done
-	if err != nil {
-		log.Println(err)
+	switch i := in.(type) {
+	case []byte:
+		bytesReader = bytes.NewReader(i)
+	case *bytes.Reader:
+		bytesReader = i
+	default:
 		return
 	}
 
-	f, err := os.ReadFile("pcm.pcm")
+	pr, pw := io.Pipe()
+
+	cmd := fluentffmpeg.NewCommand("ffmpeg").
+		PipeInput(bytesReader).
+		OutputFormat("s16le").
+		PipeOutput(pw).
+		AudioCodec("pcm_s16le").
+		AudioRate(48000)
+
+	go func() {
+		defer pw.Close()
+		err := cmd.Run()
+		if err != nil {
+			log.Printf("aacToPCM failed: %v", err)
+			return
+		}
+	}()
+
+	b, err := ioutil.ReadAll(pr)
 	if err != nil {
-		log.Println(err)
+		log.Printf("aacToPCM failed: %v", err)
 		return
 	}
-
-	pcm = make([]int16, len(f)/2)
-	buf := bytes.NewReader(f)
+	pcm = make([]int16, len(b)/2)
+	buf := bytes.NewReader(b)
 	binary.Read(buf, binary.LittleEndian, pcm)
+	pr.Close()
+
 	return
-}
-
-func youtubeTo(url string) goydl.Info {
-	yt := goydl.NewYoutubeDl()
-	yt.YoutubeDlPath = "yt-dlp"
-	yt.Options.Output.Value = "./yes.m4a"
-	yt.Options.ExtractAudio.Value = true
-	yt.Options.AudioFormat.Value = "m4a"
-	yt.Options.AudioQuality.Value = "0"
-	yt.Options.Format.Value = "bestaudio/best"
-
-	cmd, err := yt.Download(url)
-	defer cmd.Wait()
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	return yt.Info
-
 }

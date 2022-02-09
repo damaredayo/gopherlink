@@ -34,7 +34,12 @@ func (r *rpc) GetStatusStream(_ *emptypb.Empty, stream pb.Gopherlink_GetStatusSt
 }
 
 func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded, error) {
-	info := youtubeTo(song.GetURL())
+	aac, info, err := youtubeToAAC(song.GetURL())
+
+	log.Printf("downloaded %v successfully.", info.Title)
+	if err != nil {
+		return nil, err
+	}
 	v, ok := players[song.GuildId]
 	v.NowPlaying = &np{
 		GuildId:  song.GuildId,
@@ -48,7 +53,7 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 		return nil, fmt.Errorf("no player to guildid")
 	}
 	if !v.Reconnecting {
-		pcm, rate := aacToPCM()
+		pcm, rate := aacToPCM(aac)
 		go v.musicPlayer(v.udpclose, rate, 960, pcm)
 	}
 
