@@ -35,12 +35,15 @@ func (r *rpc) GetStatusStream(_ *emptypb.Empty, stream pb.Gopherlink_GetStatusSt
 
 func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded, error) {
 	aac, info, err := youtubeToAAC(song.GetURL())
-
-	log.Printf("downloaded %v successfully.", info.Title)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("downloaded %v successfully.", info.Title)
+
 	v, ok := players[song.GuildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
 	v.NowPlaying = &np{
 		GuildId:  song.GuildId,
 		Playing:  true,
@@ -49,12 +52,12 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 		Author:   info.Uploader,
 		Title:    info.Title,
 	}
-	if !ok {
-		return nil, fmt.Errorf("no player to guildid")
-	}
+
 	if !v.Reconnecting {
 		pcm, rate := aacToPCM(aac)
-		go v.musicPlayer(v.udpclose, rate, 960, pcm)
+		v.pcm = pcm
+		playerclose := make(chan struct{})
+		go v.musicPlayer(playerclose, rate, 960)
 	}
 
 	sa := &pb.SongAdded{
@@ -75,9 +78,33 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 func (r *rpc) RemoveSong(ctx context.Context, song *pb.SongRequest) (*pb.SongRemoved, error) {
 	sr := &pb.SongRemoved{
 		Song: song,
-		Ok:   0,
+		Ok:   false,
 	}
 	return sr, nil
+}
+
+func (r *rpc) PauseSong(ctx context.Context, req *pb.SongPauseRequest) (*pb.SongInfo, error) {
+	guildId := req.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+
+	if player.NowPlaying == nil {
+		return nil, fmt.Errorf("nothing playing")
+	}
+
+	player.paused = !player.paused
+	playing := pb.PlayStatus_PAUSED
+	ss := &pb.SongInfo{
+		GuildId:  guildId,
+		Playing:  playing,
+		Duration: player.NowPlaying.Duration,
+		Elapsed:  int64(time.Since(player.NowPlaying.Started).Seconds()),
+		Author:   player.NowPlaying.Author,
+		Title:    player.NowPlaying.Title,
+	}
+	return ss, nil
 }
 
 func (r *rpc) NowPlaying(ctx context.Context, np *pb.NowPlayingRequest) (*pb.SongInfo, error) {
@@ -119,7 +146,7 @@ func (r *rpc) Seek(ctx context.Context, seek *pb.SeekRequest) (*pb.SongInfo, err
 func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer) (*pb.PlayerResponse, error) {
 	fmt.Println(voiceData)
 	pr := &pb.PlayerResponse{
-		Ok: 0,
+		Ok: false,
 		Player: &pb.Player{
 			GuildId: voiceData.GuildId,
 			Playing: pb.PlayStatus_STOPPED,
@@ -133,11 +160,12 @@ func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer
 		SessionID: voiceData.SessionId,
 		UserID:    voiceData.UserId,
 	}
-	err := vc.Open(r)
+	err := vc.Open()
 	if err != nil {
-		pr.Ok = 0
 		return pr, err
 	}
+
+	pr.Ok = vc.Ready
 
 	players[voiceData.GuildId] = &vc
 

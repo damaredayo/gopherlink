@@ -58,9 +58,13 @@ message SongAdded {
     SongInfo info = 2;
 }
 
+message SongPauseRequest {
+    string guild_id = 1;
+}
+
 message SongRemoved {
     SongRequest song = 1;
-    int64 ok = 2;
+    bool ok = 2;
 }
 
 message DiscordVoiceServer {
@@ -77,7 +81,7 @@ message Player {
 }
 
 message PlayerResponse {
-    int64 ok = 1;
+    bool ok = 1;
     Player player = 2;
 }
 
@@ -87,6 +91,7 @@ service Gopherlink {
     rpc CreatePlayer (DiscordVoiceServer) returns (PlayerResponse) {}
 
     rpc AddSong (SongRequest) returns (SongAdded) {}
+    rpc PauseSong (SongPauseRequest) returns (SongInfo) {}
     rpc RemoveSong (SongRequest) returns (SongRemoved) {}
     rpc NowPlaying (NowPlayingRequest) returns (SongInfo) {}
     

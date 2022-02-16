@@ -113,10 +113,13 @@ type VoiceConnection struct {
 
 	NowPlaying *np
 
-	OpusSend chan []byte
+	pcm       []int16
+	ByteTrack int
+	OpusSend  chan []byte
 
 	Playing bool
 	paused  bool
+	Volume  int16
 
 	op4 Op4
 	op2 Op2
@@ -138,21 +141,21 @@ type Event struct {
 
 var players = make(map[string]*VoiceConnection, 0)
 
-func (v *VoiceConnection) Open(r *rpc) (err error) {
+func (v *VoiceConnection) Open() (err error) {
 	if err := v.makeWS(); err != nil {
 		return err
 	}
 
 	data := voiceHandshakeOp{0, voiceHandshakeData{v.GuildID, v.UserID, v.SessionID, v.Token}}
 	log.Printf("d: %+v\n", data)
+	v.wsMutex.Lock()
 	err = v.ws.WriteJSON(data)
+	v.wsMutex.Unlock()
 	if err != nil {
 		return err
 	}
 
 	go v.initListener(v.ws, v.close)
-
-	r.Ok = 1
 
 	return
 }
@@ -212,24 +215,34 @@ func (v *VoiceConnection) initListener(wsConn *websocket.Conn, close <-chan stru
 				log.Println("1000 caught, reconnecting...")
 				v.Reconnecting = true
 				v.Close()
+				v.wsMutex.Lock()
+				v.ws.Close()
+				v.wsMutex.Unlock()
 				log.Println("v.close 1000 success")
 				if err := v.makeWS(); err != nil {
 					log.Fatalf("1000 retry failed: %v\n", err)
 					return
 				}
+				v.Open()
+
 				data := voiceHandshakeOp{7,
-					voiceHandshakeData{ServerID: v.GuildID,
+					voiceHandshakeData{
+						ServerID:  v.GuildID,
 						SessionID: v.SessionID,
 						Token:     v.Token},
 				}
 				log.Printf("d: %+v\n", data)
+				v.Mutex.Lock()
 				err = v.ws.WriteJSON(data)
+				v.Mutex.Unlock()
+
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				go v.initListener(v.ws, v.close)
 				return
+			} else {
+				log.Fatalln(err)
 			}
 
 		}
@@ -261,13 +274,19 @@ func (v *VoiceConnection) opcodeHandler(msg []byte) {
 			log.Printf("error: %v\n", err)
 			return
 		}
+		if v.Reconnecting {
+			if v.udpclose != nil {
+				v.udpClose()
+			}
+		} else {
+			v.OpusSend = make(chan []byte, 2)
+		}
 		err := v.udpOpen()
 		if err != nil {
 			log.Printf("error: %v\n", err)
 			return
 		}
 
-		v.OpusSend = make(chan []byte, 2)
 		go v.createOpus(v.udpclose, 48000, 960)
 
 	case 3: // heartbeat
@@ -303,13 +322,14 @@ func (v *VoiceConnection) opcodeHandler(msg []byte) {
 			return
 		}
 
+		v.Reconnecting = false
 		first := make(chan struct{})
 		go v.heartbeat(v.ws, v.close, first, op8.HeartbeatInterval)
 		<-first
 
 		return
 	case 9: // welcome back :3
-		//go v.createOpus(v.udp, v.udpclose, 48000, 960)
+
 		v.Reconnecting = false
 		log.Printf("reconnected")
 	default: // unknown
@@ -433,16 +453,12 @@ func (v *VoiceConnection) udpOpen() (err error) {
 	port := binary.BigEndian.Uint16(recv[68:70])
 
 	data := voiceUDPOp{1, voiceUDPD{"udp", voiceUDPData{ip, port, "xsalsa20_poly1305"}}}
-
-	err = v.ws.WriteJSON(data)
 	log.Printf("d: %+v\n", data)
+	v.wsMutex.Lock()
+	err = v.ws.WriteJSON(data)
+	v.wsMutex.Unlock()
 
 	udpclose := make(chan struct{})
-
-	if v.udp != nil {
-		v.udpClose()
-		v.udp = nil
-	}
 
 	v.udp = udp
 	v.udpclose = udpclose

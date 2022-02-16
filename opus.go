@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
-	"io"
-	"io/ioutil"
+	"fmt"
 	"log"
 	"time"
 
-	fluentffmpeg "github.com/damaredayo/go-fluent-ffmpeg"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/hraban/opus.v2"
 )
@@ -46,6 +43,7 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 	const channels = 2
 	a := 0
 	log.Printf("Opening opus sender")
+	v.Reconnecting = false
 	for {
 		select {
 		case <-udpclose:
@@ -99,7 +97,7 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 	}
 }
 
-func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size int, pcm []int16) {
+func (v *VoiceConnection) musicPlayer(playerclose <-chan struct{}, rate int, size int) {
 	v.Playing = true
 	v.paused = false
 	const channels = 2
@@ -116,27 +114,42 @@ func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size i
 	if err != nil {
 		log.Panicf("failed to make opus encoder %v\n", err)
 	}
-	a := 0
+	enc.SetDTX(true)
+
+	v.ByteTrack = 0
 	defer ticker.Stop()
 
-	pcmlen := len(pcm)
+	pcmlen := len(v.pcm)
 
 	for {
 		select {
-		case <-udpclose:
+		case <-playerclose:
 			log.Println("music player udpclose called")
 			return
 		default:
-			var perc float64 = float64(a) / float64(pcmlen)
-			log.Printf("\rmusic sending %v, %v left to go (%.2f%%)", a, len(pcm), perc*100)
+			var perc float64 = float64(v.ByteTrack) / float64(pcmlen)
+			if v.paused {
+				fmt.Printf("\r[PAUSED] (%v): %v | %.2fMB/%.2fMB (%.2f%%)",
+					v.GuildID,
+					v.NowPlaying.Author+" - "+v.NowPlaying.Title,
+					float64(v.ByteTrack)/(1<<20),
+					float64(pcmlen)/(1<<20),
+					perc*100)
+				continue
+			}
+			fmt.Printf("\r[PLAYING] (%v): %v | %.2fMB/%.2fMB (%.2f%%)",
+				v.GuildID,
+				v.NowPlaying.Author+" - "+v.NowPlaying.Title,
+				float64(v.ByteTrack)/(1<<20),
+				float64(pcmlen)/(1<<20),
+				perc*100)
 			if v.Reconnecting || v.OpusSend == nil {
 				log.Printf("music player: reconnecting... (v.Reconnecting=%v, v.OpusSend=%v", v.Reconnecting, v.OpusSend)
 			}
 			for {
-				if len(pcm) >= packet_size {
-					a += packet_size
-					pcmbuf := pcm[:packet_size]
-					pcm = pcm[packet_size:]
+				if len(v.pcm) >= packet_size {
+					v.ByteTrack += packet_size
+					pcmbuf := v.pcm[v.ByteTrack : v.ByteTrack+packet_size]
 
 					frameSizeMs := float32(packet_size) / channels * 1000 / 48000
 					switch frameSizeMs {
@@ -144,6 +157,10 @@ func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size i
 
 					default:
 						log.Printf("Illegal frame size: %d bytes (%f ms)", packet_size, frameSizeMs)
+					}
+					v.Volume = 100
+					for i, p := range pcmbuf {
+						pcmbuf[i] = p - v.Volume
 					}
 
 					data := make([]byte, bufsize)
@@ -162,7 +179,7 @@ func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size i
 
 					break
 				}
-				if len(pcm) < packet_size {
+				if len(v.pcm) < packet_size {
 					v.Playing = false
 					return
 				}
@@ -171,57 +188,12 @@ func (v *VoiceConnection) musicPlayer(udpclose <-chan struct{}, rate int, size i
 		}
 
 		select {
-		case <-udpclose:
+		case <-playerclose:
 			v.Playing = false
-			log.Println("music player udpclose called")
+			log.Println("music player close called")
 			return
 		case <-ticker.C:
 		}
 
 	}
-}
-
-func aacToPCM(in interface{}) (pcm []int16, sampleRate int) {
-	sampleRate = 48000
-
-	var bytesReader *bytes.Reader
-
-	switch i := in.(type) {
-	case []byte:
-		bytesReader = bytes.NewReader(i)
-	case *bytes.Reader:
-		bytesReader = i
-	default:
-		return
-	}
-
-	pr, pw := io.Pipe()
-
-	cmd := fluentffmpeg.NewCommand("ffmpeg").
-		PipeInput(bytesReader).
-		OutputFormat("s16le").
-		PipeOutput(pw).
-		AudioCodec("pcm_s16le").
-		AudioRate(48000)
-
-	go func() {
-		defer pw.Close()
-		err := cmd.Run()
-		if err != nil {
-			log.Printf("aacToPCM failed: %v", err)
-			return
-		}
-	}()
-
-	b, err := ioutil.ReadAll(pr)
-	if err != nil {
-		log.Printf("aacToPCM failed: %v", err)
-		return
-	}
-	pcm = make([]int16, len(b)/2)
-	buf := bytes.NewReader(b)
-	binary.Read(buf, binary.LittleEndian, pcm)
-	pr.Close()
-
-	return
 }

@@ -16,9 +16,6 @@ func youtubeToAAC(url string) (aac []byte, info *goutubedl.Info, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
-	log.Printf("downloading YT... %v\n", res.Info)
-	log.Printf("downloading YT... \n%v\n", string(res.RawJSON))
 	info = &goutubedl.Info{}
 	err = json.Unmarshal(res.RawJSON, &info)
 	log.Println(err)
