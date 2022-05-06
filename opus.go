@@ -173,15 +173,19 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 								pcm, rate := aacToPCM(aac)
 								v.pcm = pcm
 								v.playerclose = make(chan struct{})
+								v.NowPlaying = &np{
+									GuildId:  v.GuildID,
+									Playing:  true,
+									Duration: int64(info.Duration),
+									Started:  time.Now(),
+									Author:   info.Author,
+									Title:    info.Title,
+								}
 								go v.musicPlayer(rate, 960)
 								return
 							}
 							log.Println("failed to get next song", err)
 						}
-					}
-					v.Volume = 100
-					for i, p := range pcmbuf {
-						pcmbuf[i] = p - v.Volume
 					}
 
 					data := make([]byte, bufsize)

@@ -49,7 +49,7 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 		songInfo = &pb.SongInfo{
 			GuildId:  song.GetGuildId(),
 			Playing:  pb.PlayStatus_STOPPED,
-			Duration: v.NowPlaying.Duration,
+			Duration: int64(info.Duration),
 			Elapsed:  0,
 			Author:   info.Uploader,
 			Title:    info.Title,
@@ -62,6 +62,15 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 			return nil, err
 		}
 
+		v.NowPlaying = &np{
+			GuildId:  song.GuildId,
+			Playing:  true,
+			Duration: int64(info.Duration),
+			Started:  time.Now(),
+			Author:   info.Uploader,
+			Title:    info.Title,
+		}
+
 		songInfo = &pb.SongInfo{
 			GuildId:  song.GetGuildId(),
 			Playing:  pb.PlayStatus_PLAYING,
@@ -70,15 +79,6 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 			Author:   info.Uploader,
 			Title:    info.Title,
 			URL:      song.GetURL(),
-		}
-
-		v.NowPlaying = &np{
-			GuildId:  song.GuildId,
-			Playing:  true,
-			Duration: int64(info.Duration),
-			Started:  time.Now(),
-			Author:   info.Uploader,
-			Title:    info.Title,
 		}
 
 		if !v.Reconnecting {
