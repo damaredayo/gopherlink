@@ -112,6 +112,7 @@ type VoiceConnection struct {
 	Endpoint  string
 
 	NowPlaying *np
+	Queue      *Queue
 
 	pcm       []int16
 	ByteTrack int
@@ -124,8 +125,9 @@ type VoiceConnection struct {
 	op4 Op4
 	op2 Op2
 
-	close    chan struct{}
-	udpclose chan struct{}
+	close       chan struct{}
+	udpclose    chan struct{}
+	playerclose chan struct{}
 
 	ws      *websocket.Conn
 	wsMutex sync.Mutex
@@ -142,17 +144,39 @@ type Event struct {
 var players = make(map[string]*VoiceConnection, 0)
 
 func (v *VoiceConnection) Open() (err error) {
+	if v.ws != nil {
+		v.wsMutex.Lock()
+		v.ws.Close()
+		v.ws = nil
+		v.wsMutex.Unlock()
+	}
 	if err := v.makeWS(); err != nil {
 		return err
 	}
 
-	data := voiceHandshakeOp{0, voiceHandshakeData{v.GuildID, v.UserID, v.SessionID, v.Token}}
-	log.Printf("d: %+v\n", data)
-	v.wsMutex.Lock()
-	err = v.ws.WriteJSON(data)
-	v.wsMutex.Unlock()
-	if err != nil {
-		return err
+	if v.Reconnecting {
+		data := voiceHandshakeOp{7,
+			voiceHandshakeData{
+				ServerID:  v.GuildID,
+				SessionID: v.SessionID,
+				UserID:    v.UserID,
+				Token:     v.Token},
+		}
+		v.wsMutex.Lock()
+		err = v.ws.WriteJSON(data)
+		v.wsMutex.Unlock()
+		if err != nil {
+			return err
+		}
+
+	} else {
+		data := voiceHandshakeOp{0, voiceHandshakeData{v.GuildID, v.UserID, v.SessionID, v.Token}}
+		v.wsMutex.Lock()
+		err = v.ws.WriteJSON(data)
+		v.wsMutex.Unlock()
+		if err != nil {
+			return err
+		}
 	}
 
 	go v.initListener(v.ws, v.close)
@@ -181,11 +205,8 @@ func (v *VoiceConnection) makeWS() (err error) {
 }
 
 func (v *VoiceConnection) initListener(wsConn *websocket.Conn, close <-chan struct{}) {
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
 	for {
 		_, msg, err := v.ws.ReadMessage()
-		log.Printf("h: %v", string(msg))
 		if err != nil {
 			if websocket.IsCloseError(err, 4014) {
 				v.Mutex.Lock()
@@ -196,6 +217,7 @@ func (v *VoiceConnection) initListener(wsConn *websocket.Conn, close <-chan stru
 
 				return
 			}
+
 			if websocket.IsCloseError(err, 4006) {
 				ce, ok := err.(*websocket.CloseError)
 				if ok {
@@ -212,46 +234,21 @@ func (v *VoiceConnection) initListener(wsConn *websocket.Conn, close <-chan stru
 			}
 
 			if websocket.IsCloseError(err, 1000) {
-				log.Println("1000 caught, reconnecting...")
 				v.Reconnecting = true
 				v.Close()
-				v.wsMutex.Lock()
 				v.ws.Close()
-				v.wsMutex.Unlock()
-				log.Println("v.close 1000 success")
-				if err := v.makeWS(); err != nil {
-					log.Fatalf("1000 retry failed: %v\n", err)
-					return
-				}
 				v.Open()
 
-				data := voiceHandshakeOp{7,
-					voiceHandshakeData{
-						ServerID:  v.GuildID,
-						SessionID: v.SessionID,
-						Token:     v.Token},
-				}
-				log.Printf("d: %+v\n", data)
-				v.Mutex.Lock()
-				err = v.ws.WriteJSON(data)
-				v.Mutex.Unlock()
-
-				if err != nil {
-					log.Println(err)
-					return
-				}
 				return
 			} else {
-				log.Fatalln(err)
+				return
 			}
-
 		}
-
+		go v.opcodeHandler(msg)
 		select {
 		case <-v.close:
 			return
-		case <-ticker.C:
-			v.opcodeHandler(msg)
+		default:
 		}
 	}
 }
@@ -264,33 +261,47 @@ func (v *VoiceConnection) opcodeHandler(msg []byte) {
 
 	switch e.Operation {
 	case 1:
-		log.Printf("1: %v", e.RawData)
 		return
 	case 2: // voice ready
-		log.Printf("2: %v", string(e.RawData))
-
 		v.op2 = Op2{}
 		if err := json.Unmarshal(e.RawData, &v.op2); err != nil {
 			log.Printf("error: %v\n", err)
 			return
 		}
-		if v.Reconnecting {
-			if v.udpclose != nil {
-				v.udpClose()
-			}
-		} else {
+
+		if v.OpusSend == nil {
 			v.OpusSend = make(chan []byte, 2)
 		}
-		err := v.udpOpen()
-		if err != nil {
-			log.Printf("error: %v\n", err)
-			return
+
+		if v.Reconnecting {
+			v.Mutex.Lock()
+			v.udpClose()
+			udp, err := v.udpOpen()
+			v.Mutex.Unlock()
+			if err != nil {
+				log.Printf("error: %v\n", err)
+				return
+			}
+			v.udp = udp
+
+		} else {
+			if v.udp != nil {
+				v.udp.Close()
+				v.udp = nil
+			}
+
+			udp, err := v.udpOpen()
+			v.udp = udp
+			if err != nil {
+				log.Printf("error: %v\n", err)
+				return
+			}
 		}
+		v.Reconnecting = false
 
 		go v.createOpus(v.udpclose, 48000, 960)
 
 	case 3: // heartbeat
-		log.Printf("heartbeat: %v", string(e.RawData))
 		return
 
 	case 4: // udp secret
@@ -312,7 +323,6 @@ func (v *VoiceConnection) opcodeHandler(msg []byte) {
 			log.Printf("error: %v\n", err)
 			return
 		}
-		log.Printf("op6 recv: %+v\n", op6)
 		return
 
 	case 8: // hello
@@ -323,15 +333,12 @@ func (v *VoiceConnection) opcodeHandler(msg []byte) {
 		}
 
 		v.Reconnecting = false
-		first := make(chan struct{})
-		go v.heartbeat(v.ws, v.close, first, op8.HeartbeatInterval)
-		<-first
+		v.heartbeatInit(op8.HeartbeatInterval)
+		log.Println("heartbeat init")
 
 		return
 	case 9: // welcome back :3
-
 		v.Reconnecting = false
-		log.Printf("reconnected")
 	default: // unknown
 		log.Printf("unknown op, dumping event data: %v\n", string(e.RawData))
 	}
@@ -345,7 +352,11 @@ func (v *VoiceConnection) Close() {
 
 	v.Ready, v.Speaking = false, false
 
-	if v.close != nil {
+	if v.ws != nil {
+		err := v.ws.Close()
+		if err != nil {
+			log.Fatalln(err)
+		}
 		close(v.close)
 		v.close = nil
 	}
@@ -357,79 +368,82 @@ func (v *VoiceConnection) udpClose() {
 
 	v.Ready, v.Speaking = false, false
 
-	if v.udpclose != nil {
+	if v.udp != nil {
+		err := v.udp.Close()
+		if err != nil {
+			log.Fatalln(err)
+		}
 		close(v.udpclose)
 		v.udpclose = nil
 	}
 }
-func (v *VoiceConnection) heartbeat(ws *websocket.Conn, close <-chan struct{}, first chan struct{}, i time.Duration) {
-	if close == nil || ws == nil {
+func (v *VoiceConnection) heartbeatInit(i time.Duration) {
+	if v.close == nil || v.ws == nil {
 		return
 	}
-
-	var err error
 	ticker := time.NewTicker(i * time.Millisecond)
-	log.Println("heartbeat ticker", (i * time.Millisecond).String())
 	defer ticker.Stop()
-	for {
-		v.wsMutex.Lock()
-		err = ws.WriteJSON(voiceHeartbeatOp{3, int(time.Now().Unix())})
-		log.Printf("heartbeat sent, err :%v\n", err)
-		log.Printf("d: %+v\n", voiceHeartbeatOp{3, int(time.Now().Unix())})
-		v.wsMutex.Unlock()
-		first <- struct{}{}
-		if err != nil {
-			log.Printf("error sending heartbeat to voice endpoint %s, %s", v.Endpoint, err)
-
-			ce, ok := err.(*websocket.CloseError)
-			if ok {
-				log.Printf("websocket failed: %v - %v", ce.Code, ce.Text)
-				v.Close()
+	// first heartbeat manually, then the ticker will take over
+	v.heartbeat()
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				v.heartbeat()
+			case <-v.close:
+				return
 			}
 		}
+	}()
+}
 
-		select {
-		case <-ticker.C:
-			log.Println("sending heartbeat...")
-		case <-v.close:
-			return
+func (v *VoiceConnection) heartbeat() {
+	v.wsMutex.Lock()
+	err := v.ws.WriteJSON(voiceHeartbeatOp{3, int(time.Now().Unix())})
+	v.wsMutex.Unlock()
+	if err != nil {
+		log.Printf("error sending heartbeat to voice endpoint %s, %s", v.Endpoint, err)
+
+		ce, ok := err.(*websocket.CloseError)
+		if ok {
+			log.Printf("websocket failed: %v - %v", ce.Code, ce.Text)
+			v.Close()
 		}
 	}
 }
 
-func (v *VoiceConnection) udpOpen() (err error) {
+func (v *VoiceConnection) udpOpen() (udp *net.UDPConn, err error) {
 	v.Mutex.Lock()
 	defer v.Mutex.Unlock()
 
 	if v.ws == nil {
-		return ErrVoiceWSNil
+		return nil, ErrVoiceWSNil
 	}
 
 	if v.udpclose == nil {
-		return ErrNilClose
+		return nil, ErrNilClose
 	}
 
 	if v.Endpoint == "" {
-		return ErrEmptyEndpoint
+		return nil, ErrEmptyEndpoint
 	}
 
 	host := fmt.Sprintf("%v:%v", v.op2.IP, v.op2.Port)
 	addr, err := net.ResolveUDPAddr("udp", host)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	log.Println(host)
 
-	udp, err := net.DialUDP("udp", nil, addr)
+	udp, err = net.DialUDP("udp", nil, addr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	send := make([]byte, 70)
 	binary.BigEndian.PutUint32(send, v.op2.SSRC)
 	_, err = udp.Write(send)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	recv := make([]byte, 70)
@@ -439,7 +453,7 @@ func (v *VoiceConnection) udpOpen() (err error) {
 	}
 
 	if recvLen < 70 {
-		return ErrUDPSmallPacket
+		return nil, ErrUDPSmallPacket
 	}
 
 	var ip string
@@ -453,14 +467,11 @@ func (v *VoiceConnection) udpOpen() (err error) {
 	port := binary.BigEndian.Uint16(recv[68:70])
 
 	data := voiceUDPOp{1, voiceUDPD{"udp", voiceUDPData{ip, port, "xsalsa20_poly1305"}}}
-	log.Printf("d: %+v\n", data)
 	v.wsMutex.Lock()
 	err = v.ws.WriteJSON(data)
 	v.wsMutex.Unlock()
 
 	udpclose := make(chan struct{})
-
-	v.udp = udp
 	v.udpclose = udpclose
 
 	go v.udpKeepAlive(udp, udpclose, 5*time.Second)
@@ -509,13 +520,14 @@ func (v *VoiceConnection) SetSpeaking(speaking bool) (err error) {
 		Op   int               `json:"op"` // Always 5
 		Data voiceSpeakingData `json:"d"`
 	}
-
+	v.wsMutex.Lock()
 	if v.ws == nil {
+		v.wsMutex.Unlock()
 		return fmt.Errorf("no VoiceConnection websocket")
 	}
 
 	data := voiceSpeakingOp{5, voiceSpeakingData{speaking, 0}}
-	v.wsMutex.Lock()
+
 	err = v.ws.WriteJSON(data)
 	v.wsMutex.Unlock()
 

@@ -47,6 +47,7 @@ message SongInfo {
     int64 elapsed = 4;
     string author = 5;
     string title = 6;
+    string URL = 7;
 }
 
 message SongRequest {
@@ -85,6 +86,15 @@ message PlayerResponse {
     Player player = 2;
 }
 
+message QueueRequest {
+    string guild_id = 1;
+}
+
+message Queue {
+    string guild_id = 1;
+    repeated SongInfo songs = 2;
+}
+
 service Gopherlink {
     rpc GetStatusStream (google.protobuf.Empty) returns (stream Status) {}
 
@@ -94,6 +104,7 @@ service Gopherlink {
     rpc PauseSong (SongPauseRequest) returns (SongInfo) {}
     rpc RemoveSong (SongRequest) returns (SongRemoved) {}
     rpc NowPlaying (NowPlayingRequest) returns (SongInfo) {}
+    rpc GetQueue (QueueRequest) returns (Queue) {}
     
     rpc Seek (SeekRequest) returns (SongInfo) {}
 

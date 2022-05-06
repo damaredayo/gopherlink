@@ -34,42 +34,64 @@ func (r *rpc) GetStatusStream(_ *emptypb.Empty, stream pb.Gopherlink_GetStatusSt
 }
 
 func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded, error) {
-	aac, info, err := youtubeToAAC(song.GetURL())
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("downloaded %v successfully.", info.Title)
+	var songInfo *pb.SongInfo
 
 	v, ok := players[song.GuildId]
 	if !ok {
 		return nil, fmt.Errorf("no player to guildid")
 	}
-	v.NowPlaying = &np{
-		GuildId:  song.GuildId,
-		Playing:  true,
-		Duration: int64(info.Duration),
-		Started:  time.Now(),
-		Author:   info.Uploader,
-		Title:    info.Title,
-	}
 
-	if !v.Reconnecting {
-		pcm, rate := aacToPCM(aac)
-		v.pcm = pcm
-		playerclose := make(chan struct{})
-		go v.musicPlayer(playerclose, rate, 960)
-	}
+	if v.Playing || v.paused {
+		info, err := youtubeToInfo(song.GetURL())
+		if err != nil {
+			return nil, err
+		}
+		songInfo = &pb.SongInfo{
+			GuildId:  song.GetGuildId(),
+			Playing:  pb.PlayStatus_STOPPED,
+			Duration: v.NowPlaying.Duration,
+			Elapsed:  0,
+			Author:   info.Uploader,
+			Title:    info.Title,
+			URL:      song.GetURL(),
+		}
+		v.Queue.AddSong(ctx, songInfo)
+	} else {
+		aac, info, err := youtubeToAAC(song.GetURL())
+		if err != nil {
+			return nil, err
+		}
 
-	sa := &pb.SongAdded{
-		Song: song,
-		Info: &pb.SongInfo{
+		songInfo = &pb.SongInfo{
 			GuildId:  song.GetGuildId(),
 			Playing:  pb.PlayStatus_PLAYING,
 			Duration: v.NowPlaying.Duration,
 			Elapsed:  0,
 			Author:   info.Uploader,
 			Title:    info.Title,
-		},
+			URL:      song.GetURL(),
+		}
+
+		v.NowPlaying = &np{
+			GuildId:  song.GuildId,
+			Playing:  true,
+			Duration: int64(info.Duration),
+			Started:  time.Now(),
+			Author:   info.Uploader,
+			Title:    info.Title,
+		}
+
+		if !v.Reconnecting {
+			pcm, rate := aacToPCM(aac)
+			v.pcm = pcm
+			v.playerclose = make(chan struct{})
+			go v.musicPlayer(rate, 960)
+		}
+	}
+
+	sa := &pb.SongAdded{
+		Song: song,
+		Info: songInfo,
 	}
 
 	return sa, nil
@@ -133,6 +155,24 @@ func (r *rpc) NowPlaying(ctx context.Context, np *pb.NowPlayingRequest) (*pb.Son
 	return ss, nil
 }
 
+func (r *rpc) GetQueue(ctx context.Context, req *pb.QueueRequest) (*pb.Queue, error) {
+	guildId := req.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+	queue, err := player.Queue.GetQueue(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	q := &pb.Queue{
+		GuildId: guildId,
+		Songs:   queue,
+	}
+	return q, nil
+}
+
 func (r *rpc) Seek(ctx context.Context, seek *pb.SeekRequest) (*pb.SongInfo, error) {
 	ss := &pb.SongInfo{
 		GuildId:  "none",
@@ -160,7 +200,13 @@ func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer
 		SessionID: voiceData.SessionId,
 		UserID:    voiceData.UserId,
 	}
-	err := vc.Open()
+
+	err := vc.MakeQueue(InternalQueueType, nil)
+	if err != nil {
+		return pr, err
+	}
+
+	err = vc.Open()
 	if err != nil {
 		return pr, err
 	}

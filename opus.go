@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -16,13 +17,13 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 		return
 	}
 
-	v.wsMutex.Lock()
+	v.Mutex.Lock()
 	v.Ready = true
-	v.wsMutex.Unlock()
+	v.Mutex.Unlock()
 	defer func() {
-		v.wsMutex.Lock()
+		v.Mutex.Lock()
 		v.Ready = false
-		v.wsMutex.Unlock()
+		v.Mutex.Unlock()
 	}()
 
 	var sequence uint16
@@ -44,6 +45,10 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 	a := 0
 	log.Printf("Opening opus sender")
 	v.Reconnecting = false
+	err := v.SetSpeaking(true)
+	if err != nil {
+		log.Panicln(err)
+	}
 	for {
 		select {
 		case <-udpclose:
@@ -61,26 +66,16 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 			}
 		}
 
-		v.Mutex.RLock()
-		speaking := v.Speaking
-		v.Mutex.RUnlock()
-		if !speaking {
-			err := v.SetSpeaking(true)
-			if err != nil {
-				log.Panicln(err)
-			}
-		}
-
 		binary.BigEndian.PutUint16(udpHeader[2:], sequence)
 		binary.BigEndian.PutUint32(udpHeader[4:], timestamp)
 
 		copy(nonce[:], udpHeader)
-		v.Mutex.RLock()
+		v.Mutex.Lock()
 		sendbuf := secretbox.Seal(udpHeader, recvbuf, &nonce, &v.op4.SecretKey)
-		_, err := v.udp.Write(sendbuf)
-		v.Mutex.RUnlock()
+		_, err = v.udp.Write(sendbuf)
+		v.Mutex.Unlock()
 		if err != nil {
-			log.Println("A", err)
+			log.Println("failed to write udp", err)
 		}
 
 		if (sequence) == 0xFFFF {
@@ -97,7 +92,7 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 	}
 }
 
-func (v *VoiceConnection) musicPlayer(playerclose <-chan struct{}, rate int, size int) {
+func (v *VoiceConnection) musicPlayer(rate int, size int) {
 	v.Playing = true
 	v.paused = false
 	const channels = 2
@@ -123,8 +118,8 @@ func (v *VoiceConnection) musicPlayer(playerclose <-chan struct{}, rate int, siz
 
 	for {
 		select {
-		case <-playerclose:
-			log.Println("music player udpclose called")
+		case <-v.playerclose:
+			log.Println("music player close called")
 			return
 		default:
 			var perc float64 = float64(v.ByteTrack) / float64(pcmlen)
@@ -149,7 +144,11 @@ func (v *VoiceConnection) musicPlayer(playerclose <-chan struct{}, rate int, siz
 			for {
 				if len(v.pcm) >= packet_size {
 					v.ByteTrack += packet_size
-					pcmbuf := v.pcm[v.ByteTrack : v.ByteTrack+packet_size]
+					nextByteTrack := v.ByteTrack + packet_size
+					if nextByteTrack >= pcmlen {
+						nextByteTrack = pcmlen
+					}
+					pcmbuf := v.pcm[v.ByteTrack:nextByteTrack]
 
 					frameSizeMs := float32(packet_size) / channels * 1000 / 48000
 					switch frameSizeMs {
@@ -157,6 +156,28 @@ func (v *VoiceConnection) musicPlayer(playerclose <-chan struct{}, rate int, siz
 
 					default:
 						log.Printf("Illegal frame size: %d bytes (%f ms)", packet_size, frameSizeMs)
+					}
+					if len(v.pcm) < packet_size || nextByteTrack == pcmlen {
+						for {
+							v.Playing = false
+							info, err := v.Queue.GetNextSong(context.Background())
+							aac, _, err := youtubeToAAC(info.GetURL())
+							if err != nil {
+								if err == ErrNoSongFound {
+									return
+								}
+								continue
+							}
+
+							if !v.Reconnecting {
+								pcm, rate := aacToPCM(aac)
+								v.pcm = pcm
+								v.playerclose = make(chan struct{})
+								go v.musicPlayer(rate, 960)
+								return
+							}
+							log.Println("failed to get next song", err)
+						}
 					}
 					v.Volume = 100
 					for i, p := range pcmbuf {
@@ -168,27 +189,24 @@ func (v *VoiceConnection) musicPlayer(playerclose <-chan struct{}, rate int, siz
 					if err != nil {
 						log.Panicf("failed to encode pcm data into opus: %v\n", err)
 					}
-					for v.Reconnecting || v.OpusSend == nil {
+					for v.Reconnecting {
 						time.Sleep(100 * time.Millisecond)
 						log.Println("reconnecting", v.Reconnecting)
 					}
 
 					go func() {
+						if v.OpusSend == nil {
+							v.OpusSend = make(chan []byte, 2)
+						}
 						v.OpusSend <- data[:n]
 					}()
-
 					break
 				}
-				if len(v.pcm) < packet_size {
-					v.Playing = false
-					return
-				}
-
 			}
 		}
 
 		select {
-		case <-playerclose:
+		case <-v.playerclose:
 			v.Playing = false
 			log.Println("music player close called")
 			return
