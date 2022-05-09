@@ -15,7 +15,7 @@
 # vendor/
 
 #Gopherlink Executable
-gopherlink
+app/app
 
 #VSC Workspace
 gopherlink.code-workspace
