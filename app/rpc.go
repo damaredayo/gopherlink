@@ -59,6 +59,7 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 			URL:      song.GetURL(),
 		}
 		v.Queue.AddSong(ctx, songInfo)
+		v.Cache.PreloadSong(song.GetURL())
 	} else {
 		aac, info, err := gopherlink.YoutubeToAAC(song.GetURL())
 		if err != nil {
@@ -87,6 +88,7 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 		if !v.Reconnecting {
 			pcm, rate := gopherlink.AacToPCM(aac)
 			v.SetPCM(pcm)
+			v.Volume = 1.0
 			go v.MusicPlayer(rate, 960)
 		}
 	}
@@ -232,7 +234,10 @@ func (r *rpc) Skip(ctx context.Context, skip *pb.SkipRequest) (*pb.SongRemoved, 
 			Title:    player.NowPlaying.Title,
 		},
 	}
-	player.Skip()
+	err := player.Skip()
+	if err != nil {
+		return nil, err
+	}
 	return song, nil
 }
 
@@ -257,6 +262,7 @@ func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer
 	if err != nil {
 		return pr, err
 	}
+	vc.MakeCache()
 
 	err = vc.Open()
 	if err != nil {

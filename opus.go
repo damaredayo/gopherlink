@@ -57,11 +57,8 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 			case recvbuf, ok = <-v.OpusSend:
 				a++
 				if !ok {
-					return
+					continue
 				}
-
-			default:
-				continue
 			}
 		}
 
@@ -69,10 +66,10 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 		binary.BigEndian.PutUint32(udpHeader[4:], timestamp)
 
 		copy(nonce[:], udpHeader)
-		v.Mutex.Lock()
+		v.udpMutex.Lock()
 		sendbuf := secretbox.Seal(udpHeader, recvbuf, &nonce, &v.op4.SecretKey)
 		_, err = v.udp.Write(sendbuf)
-		v.Mutex.Unlock()
+		v.udpMutex.Unlock()
 		if err != nil {
 			log.Println("failed to write udp", err)
 		}
@@ -119,6 +116,8 @@ func (v *VoiceConnection) MusicPlayer(rate int, size int) {
 	for {
 		select {
 		case <-v.playerclose:
+			v.Playing = false
+			v.NowPlaying = nil
 			return
 		default:
 			if v.Paused {
@@ -152,6 +151,7 @@ func (v *VoiceConnection) MusicPlayer(rate int, size int) {
 						if err != nil {
 							log.Println("failed to skip", err)
 						}
+						return
 					}
 
 					// adjust the volume
@@ -183,11 +183,10 @@ func (v *VoiceConnection) MusicPlayer(rate int, size int) {
 		select {
 		case <-v.playerclose:
 			v.Playing = false
-			log.Println("music player close called")
+			v.NowPlaying = nil
 			return
 		case <-ticker.C:
 		}
-
 	}
 }
 
@@ -210,35 +209,47 @@ func (v *VoiceConnection) Skip() error {
 		return fmt.Errorf("no song playing")
 	}
 
-	v.playerclose <- struct{}{}
-	for {
-		v.Playing = false
-		info, err := v.Queue.GetNextSong(context.Background())
+	go func() {
+		v.playerclose <- struct{}{}
+	}()
+
+	aac, info, err := v.Cache.GetNextSong()
+	if err != nil {
+		if err != ErrNoNextSong {
+			return err
+		}
+		nextInfo, err := v.Queue.GetNextSong(context.Background())
 		if err != nil {
-			if err == ErrNoSongFound {
-				v.NowPlaying = nil
-				return nil
+			if err != ErrNoNextSong {
+				return err
 			}
-			continue
 		}
-
-		aac, _, err := YoutubeToAAC(info.GetURL())
+		aac, info, err = YoutubeToAAC(nextInfo.GetURL())
 		if err != nil {
-			log.Println("failed to get aac", err)
-			continue
+			return err
 		}
-
-		pcm, rate := AacToPCM(aac)
-		v.pcm = pcm
-		v.NowPlaying = &Np{
-			GuildId:  v.GuildID,
-			Playing:  true,
-			Duration: int64(info.Duration),
-			Elapsed:  v.GetElapsed(),
-			Author:   info.Author,
-			Title:    info.Title,
-		}
-		go v.MusicPlayer(rate, 960)
-		return nil
 	}
+
+	pcm, rate := AacToPCM(aac)
+	v.pcm = pcm
+	v.NowPlaying = &Np{
+		GuildId:  v.GuildID,
+		Playing:  true,
+		Duration: int64(info.Duration),
+		Elapsed:  v.GetElapsed(),
+		Author:   info.Uploader,
+		Title:    info.Title,
+	}
+	go v.MusicPlayer(rate, 960)
+
+	nextInfo, err := v.Queue.GetNextSong(context.Background())
+	if err != nil {
+		if err != ErrNoNextSong {
+			return err
+		}
+	}
+
+	err = v.Cache.PreloadSong(nextInfo.GetURL())
+
+	return err
 }

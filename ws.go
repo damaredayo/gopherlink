@@ -113,6 +113,7 @@ type VoiceConnection struct {
 
 	NowPlaying *Np
 	Queue      *Queue
+	Cache      *Cache
 
 	pcm       []int16
 	ByteTrack int
@@ -130,9 +131,10 @@ type VoiceConnection struct {
 	udpclose    chan struct{}
 	playerclose chan struct{}
 
-	ws      *websocket.Conn
-	wsMutex sync.Mutex
-	udp     *net.UDPConn
+	ws       *websocket.Conn
+	wsMutex  sync.Mutex
+	udp      *net.UDPConn
+	udpMutex sync.Mutex
 }
 
 type Event struct {

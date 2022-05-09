@@ -17,7 +17,8 @@ const (
 )
 
 var (
-	ErrNoSongFound = fmt.Errorf("no song found")
+	ErrNoSongFound  = fmt.Errorf("no song found")
+	IndexNotInRange = fmt.Errorf("index not in range")
 )
 
 func (q QueueTypeConst) String() string {
@@ -183,7 +184,7 @@ func (i *InternalQueue) RemoveSongByIndex(ctx context.Context, remove int) (*pb.
 				return s, nil
 			}
 		}
-		return nil, fmt.Errorf("index not in range")
+		return nil, IndexNotInRange
 	}
 }
 
@@ -206,7 +207,7 @@ func (i *InternalQueue) GetNextSong(ctx context.Context) (*pb.SongInfo, error) {
 		i.Lock()
 		defer i.Unlock()
 		if len(i.queue) == 0 {
-			return nil, fmt.Errorf("queue is empty")
+			return nil, ErrNoNextSong
 		}
 		song := i.queue[0]
 		if len(i.queue) > 1 {
