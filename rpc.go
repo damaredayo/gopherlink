@@ -183,7 +183,7 @@ func (r *rpc) Seek(ctx context.Context, seek *pb.SeekRequest) (*pb.SongInfo, err
 	return ss, nil
 }
 
-func (r *rpc) SetVolume(ctx context.Context, vol *pb.VolumeRequest) (*pb.VolumeResponse, error) {
+func (r *rpc) Volume(ctx context.Context, vol *pb.VolumeRequest) (*pb.VolumeResponse, error) {
 	guildId := vol.GetGuildId()
 	player, ok := players[guildId]
 	if !ok {
