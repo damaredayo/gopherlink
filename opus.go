@@ -3,6 +3,7 @@ package gopherlink
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"time"
 
@@ -140,33 +141,16 @@ func (v *VoiceConnection) MusicPlayer(rate int, size int) {
 					default:
 						log.Printf("Illegal frame size: %d bytes (%f ms)", packet_size, frameSizeMs)
 					}
-					if len(v.pcm) < packet_size || nextByteTrack == pcmlen {
-						for {
-							v.Playing = false
-							info, err := v.Queue.GetNextSong(context.Background())
-							aac, _, err := YoutubeToAAC(info.GetURL())
-							if err != nil {
-								if err == ErrNoSongFound {
-									return
-								}
-								continue
-							}
 
-							if !v.Reconnecting {
-								pcm, rate := AacToPCM(aac)
-								v.pcm = pcm
-								v.playerclose = make(chan struct{})
-								v.NowPlaying = &Np{
-									GuildId:  v.GuildID,
-									Playing:  true,
-									Duration: int64(info.Duration),
-									Author:   info.Author,
-									Title:    info.Title,
-								}
-								go v.MusicPlayer(rate, 960)
-								return
-							}
-							log.Println("failed to get next song", err)
+					// end of the pcm
+					if len(v.pcm) < packet_size || nextByteTrack == pcmlen {
+						if v.Loop {
+							go v.MusicPlayer(rate, 960)
+							return
+						}
+						err := v.Skip()
+						if err != nil {
+							log.Println("failed to skip", err)
 						}
 					}
 
@@ -212,4 +196,49 @@ func (v *VoiceConnection) GetElapsed() int64 {
 		return 0
 	}
 	return int64(v.ByteTrack / 96000)
+}
+
+func (v *VoiceConnection) GetDuration() int64 {
+	if v.NowPlaying == nil {
+		return 0
+	}
+	return int64(len(v.pcm) / 96000)
+}
+
+func (v *VoiceConnection) Skip() error {
+	if v.NowPlaying == nil {
+		return fmt.Errorf("no song playing")
+	}
+
+	v.playerclose <- struct{}{}
+	for {
+		v.Playing = false
+		info, err := v.Queue.GetNextSong(context.Background())
+		if err != nil {
+			if err == ErrNoSongFound {
+				v.NowPlaying = nil
+				return nil
+			}
+			continue
+		}
+
+		aac, _, err := YoutubeToAAC(info.GetURL())
+		if err != nil {
+			log.Println("failed to get aac", err)
+			continue
+		}
+
+		pcm, rate := AacToPCM(aac)
+		v.pcm = pcm
+		v.NowPlaying = &Np{
+			GuildId:  v.GuildID,
+			Playing:  true,
+			Duration: int64(info.Duration),
+			Elapsed:  v.GetElapsed(),
+			Author:   info.Author,
+			Title:    info.Title,
+		}
+		go v.MusicPlayer(rate, 960)
+		return nil
+	}
 }

@@ -121,6 +121,7 @@ type VoiceConnection struct {
 	Playing bool
 	Paused  bool
 	Volume  float32
+	Loop    bool
 
 	op4 Op4
 	op2 Op2

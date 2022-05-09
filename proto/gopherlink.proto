@@ -65,7 +65,7 @@ message SongPauseRequest {
 }
 
 message SongRemoved {
-    SongRequest song = 1;
+    SongInfo song = 1;
     bool ok = 2;
 }
 
@@ -106,6 +106,21 @@ message VolumeResponse {
     float volume = 2;
 }
 
+message LoopRequest {
+    string guild_id = 1;
+    bool loop = 2;
+}
+
+message LoopResponse {
+    bool ok = 1;
+    bool loop = 2;
+}
+
+message SkipRequest {
+    string guild_id = 1;
+}
+
+
 service Gopherlink {
     rpc GetStatusStream (google.protobuf.Empty) returns (stream Status) {}
 
@@ -113,10 +128,12 @@ service Gopherlink {
 
     rpc AddSong (SongRequest) returns (SongAdded) {}
     rpc PauseSong (SongPauseRequest) returns (SongInfo) {}
-    rpc RemoveSong (SongRequest) returns (SongRemoved) {}
+    rpc RemoveSong (SongInfo) returns (SongRemoved) {}
     rpc NowPlaying (NowPlayingRequest) returns (SongInfo) {}
     rpc GetQueue (QueueRequest) returns (Queue) {}
     rpc Seek (SeekRequest) returns (SongInfo) {}
     rpc Volume (VolumeRequest) returns (VolumeResponse) {}
+    rpc Loop (LoopRequest) returns (LoopResponse) {}
+    rpc Skip (SkipRequest) returns (SongRemoved) {}
 
 }

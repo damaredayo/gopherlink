@@ -44,7 +44,7 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 		return nil, fmt.Errorf("no player to guildid")
 	}
 
-	if v.Playing || v.Paused {
+	if v.NowPlaying != nil {
 		info, err := gopherlink.YoutubeToInfo(song.GetURL())
 		if err != nil {
 			return nil, err
@@ -99,7 +99,7 @@ func (r *rpc) AddSong(ctx context.Context, song *pb.SongRequest) (*pb.SongAdded,
 	return sa, nil
 }
 
-func (r *rpc) RemoveSong(ctx context.Context, song *pb.SongRequest) (*pb.SongRemoved, error) {
+func (r *rpc) RemoveSong(ctx context.Context, song *pb.SongInfo) (*pb.SongRemoved, error) {
 	sr := &pb.SongRemoved{
 		Song: song,
 		Ok:   false,
@@ -202,6 +202,38 @@ func (r *rpc) Volume(ctx context.Context, vol *pb.VolumeRequest) (*pb.VolumeResp
 	}
 	player.Volume = vol.GetVolume()
 	return &pb.VolumeResponse{Ok: true, Volume: player.Volume}, nil
+}
+
+func (r *rpc) Loop(ctx context.Context, loop *pb.LoopRequest) (*pb.LoopResponse, error) {
+	guildId := loop.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+	player.Loop = loop.GetLoop()
+	return &pb.LoopResponse{Ok: true, Loop: player.Loop}, nil
+}
+
+func (r *rpc) Skip(ctx context.Context, skip *pb.SkipRequest) (*pb.SongRemoved, error) {
+	guildId := skip.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+	if player.NowPlaying == nil {
+		return nil, fmt.Errorf("nothing playing")
+	}
+	song := &pb.SongRemoved{
+		Song: &pb.SongInfo{
+			GuildId:  guildId,
+			Playing:  pb.PlayStatus_PLAYING,
+			Duration: player.NowPlaying.Duration,
+			Author:   player.NowPlaying.Author,
+			Title:    player.NowPlaying.Title,
+		},
+	}
+	player.Skip()
+	return song, nil
 }
 
 func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer) (*pb.PlayerResponse, error) {
