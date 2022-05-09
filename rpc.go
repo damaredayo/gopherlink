@@ -183,8 +183,17 @@ func (r *rpc) Seek(ctx context.Context, seek *pb.SeekRequest) (*pb.SongInfo, err
 	return ss, nil
 }
 
+func (r *rpc) SetVolume(ctx context.Context, vol *pb.VolumeRequest) (*pb.VolumeResponse, error) {
+	guildId := vol.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+	player.Volume = vol.GetVolume()
+	return &pb.VolumeResponse{Ok: true, Volume: player.Volume}, nil
+}
+
 func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer) (*pb.PlayerResponse, error) {
-	fmt.Println(voiceData)
 	pr := &pb.PlayerResponse{
 		Ok: false,
 		Player: &pb.Player{

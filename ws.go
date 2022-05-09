@@ -120,7 +120,7 @@ type VoiceConnection struct {
 
 	Playing bool
 	paused  bool
-	Volume  int16
+	Volume  float32
 
 	op4 Op4
 	op2 Op2
@@ -334,8 +334,6 @@ func (v *VoiceConnection) opcodeHandler(msg []byte) {
 
 		v.Reconnecting = false
 		v.heartbeatInit(op8.HeartbeatInterval)
-		log.Println("heartbeat init")
-
 		return
 	case 9: // welcome back :3
 		v.Reconnecting = false
@@ -381,8 +379,7 @@ func (v *VoiceConnection) heartbeatInit(i time.Duration) {
 	if v.close == nil || v.ws == nil {
 		return
 	}
-	ticker := time.NewTicker(i * time.Millisecond)
-	defer ticker.Stop()
+	ticker := time.NewTicker(i*time.Millisecond - time.Second)
 	// first heartbeat manually, then the ticker will take over
 	v.heartbeat()
 	go func() {
@@ -391,6 +388,7 @@ func (v *VoiceConnection) heartbeatInit(i time.Duration) {
 			case <-ticker.C:
 				v.heartbeat()
 			case <-v.close:
+				ticker.Stop()
 				return
 			}
 		}

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"log"
 	"time"
 
@@ -43,7 +42,6 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 	const sampleRate = 48000
 	const channels = 2
 	a := 0
-	log.Printf("Opening opus sender")
 	v.Reconnecting = false
 	err := v.SetSpeaking(true)
 	if err != nil {
@@ -103,7 +101,6 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 	bufsize := packet_size * 2 // *2 because []int16 to byte costs 2 bytes per entry
 
 	ticker := time.NewTicker(time.Millisecond * time.Duration(size/(rate/1000)))
-	log.Println("ticker", (time.Millisecond * time.Duration(size/(rate/1000))).String())
 
 	enc, err := opus.NewEncoder(48000, 2, opus.AppAudio)
 	if err != nil {
@@ -119,27 +116,11 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 	for {
 		select {
 		case <-v.playerclose:
-			log.Println("music player close called")
 			return
 		default:
-			var perc float64 = float64(v.ByteTrack) / float64(pcmlen)
 			if v.paused {
-				fmt.Printf("\r[PAUSED] (%v): %v | %.2fMB/%.2fMB (%.2f%%)",
-					v.GuildID,
-					v.NowPlaying.Author+" - "+v.NowPlaying.Title,
-					float64(v.ByteTrack)/(1<<20),
-					float64(pcmlen)/(1<<20),
-					perc*100)
+				time.Sleep(time.Millisecond * 100)
 				continue
-			}
-			fmt.Printf("\r[PLAYING] (%v): %v | %.2fMB/%.2fMB (%.2f%%)",
-				v.GuildID,
-				v.NowPlaying.Author+" - "+v.NowPlaying.Title,
-				float64(v.ByteTrack)/(1<<20),
-				float64(pcmlen)/(1<<20),
-				perc*100)
-			if v.Reconnecting || v.OpusSend == nil {
-				log.Printf("music player: reconnecting... (v.Reconnecting=%v, v.OpusSend=%v", v.Reconnecting, v.OpusSend)
 			}
 			for {
 				if len(v.pcm) >= packet_size {
@@ -188,21 +169,26 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 						}
 					}
 
+					// adjust the volume
+					if v.Volume != 1.0 {
+						for i := 0; i < len(pcmbuf); i++ {
+							pcmbuf[i] = int16(float32(pcmbuf[i]) * v.Volume)
+						}
+					}
+
 					data := make([]byte, bufsize)
 					n, err := enc.Encode(pcmbuf, data)
 					if err != nil {
 						log.Panicf("failed to encode pcm data into opus: %v\n", err)
-					}
-					for v.Reconnecting {
-						time.Sleep(100 * time.Millisecond)
-						log.Println("reconnecting", v.Reconnecting)
 					}
 
 					go func() {
 						if v.OpusSend == nil {
 							v.OpusSend = make(chan []byte, 2)
 						}
-						v.OpusSend <- data[:n]
+						if !v.Reconnecting {
+							v.OpusSend <- data[:n]
+						}
 					}()
 					break
 				}

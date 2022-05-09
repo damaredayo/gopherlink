@@ -31,6 +31,7 @@ type GopherlinkClient interface {
 	NowPlaying(ctx context.Context, in *NowPlayingRequest, opts ...grpc.CallOption) (*SongInfo, error)
 	GetQueue(ctx context.Context, in *QueueRequest, opts ...grpc.CallOption) (*Queue, error)
 	Seek(ctx context.Context, in *SeekRequest, opts ...grpc.CallOption) (*SongInfo, error)
+	Volume(ctx context.Context, in *VolumeRequest, opts ...grpc.CallOption) (*VolumeResponse, error)
 }
 
 type gopherlinkClient struct {
@@ -136,6 +137,15 @@ func (c *gopherlinkClient) Seek(ctx context.Context, in *SeekRequest, opts ...gr
 	return out, nil
 }
 
+func (c *gopherlinkClient) Volume(ctx context.Context, in *VolumeRequest, opts ...grpc.CallOption) (*VolumeResponse, error) {
+	out := new(VolumeResponse)
+	err := c.cc.Invoke(ctx, "/database.Gopherlink/Volume", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GopherlinkServer is the server API for Gopherlink service.
 // All implementations must embed UnimplementedGopherlinkServer
 // for forward compatibility
@@ -148,6 +158,7 @@ type GopherlinkServer interface {
 	NowPlaying(context.Context, *NowPlayingRequest) (*SongInfo, error)
 	GetQueue(context.Context, *QueueRequest) (*Queue, error)
 	Seek(context.Context, *SeekRequest) (*SongInfo, error)
+	Volume(context.Context, *VolumeRequest) (*VolumeResponse, error)
 	mustEmbedUnimplementedGopherlinkServer()
 }
 
@@ -178,6 +189,9 @@ func (UnimplementedGopherlinkServer) GetQueue(context.Context, *QueueRequest) (*
 }
 func (UnimplementedGopherlinkServer) Seek(context.Context, *SeekRequest) (*SongInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Seek not implemented")
+}
+func (UnimplementedGopherlinkServer) Volume(context.Context, *VolumeRequest) (*VolumeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Volume not implemented")
 }
 func (UnimplementedGopherlinkServer) mustEmbedUnimplementedGopherlinkServer() {}
 
@@ -339,6 +353,24 @@ func _Gopherlink_Seek_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gopherlink_Volume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GopherlinkServer).Volume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/database.Gopherlink/Volume",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GopherlinkServer).Volume(ctx, req.(*VolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Gopherlink_ServiceDesc is the grpc.ServiceDesc for Gopherlink service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -373,6 +405,10 @@ var Gopherlink_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Seek",
 			Handler:    _Gopherlink_Seek_Handler,
+		},
+		{
+			MethodName: "Volume",
+			Handler:    _Gopherlink_Volume_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
