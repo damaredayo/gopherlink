@@ -1,4 +1,4 @@
-package main
+package gopherlink
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	fluentffmpeg "github.com/damaredayo/go-fluent-ffmpeg"
 )
 
-func aacToPCM(in interface{}) (pcm []int16, sampleRate int) {
+func AacToPCM(in interface{}) (pcm []int16, sampleRate int) {
 	sampleRate = 48000
 
 	var bytesReader *bytes.Reader
@@ -60,4 +60,8 @@ func reverse(s []int16) []int16 {
 		s[i], s[j] = s[j], s[i]
 	}
 	return s
+}
+
+func (v *VoiceConnection) SetPCM(pcm []int16) {
+	v.pcm = pcm
 }

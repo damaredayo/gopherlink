@@ -1,4 +1,4 @@
-package main
+package gopherlink
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"github.com/damaredayo/goutubedl"
 )
 
-func youtubeToAAC(url string) (aac []byte, info *goutubedl.Info, err error) {
+func YoutubeToAAC(url string) (aac []byte, info *goutubedl.Info, err error) {
 	goutubedl.Path = "yt-dlp"
 	res, err := goutubedl.New(context.Background(), url, goutubedl.Options{Type: goutubedl.TypeSingle})
 	if err != nil {
@@ -33,7 +33,7 @@ func youtubeToAAC(url string) (aac []byte, info *goutubedl.Info, err error) {
 	return
 }
 
-func youtubeToInfo(url string) (info *goutubedl.Info, err error) {
+func YoutubeToInfo(url string) (info *goutubedl.Info, err error) {
 	goutubedl.Path = "yt-dlp"
 	res, err := goutubedl.New(context.Background(), url, goutubedl.Options{Type: goutubedl.TypeSingle})
 	if err != nil {

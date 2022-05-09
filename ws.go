@@ -1,4 +1,4 @@
-package main
+package gopherlink
 
 import (
 	"encoding/binary"
@@ -82,11 +82,11 @@ type Op8 struct {
 	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
 }
 
-type np struct {
+type Np struct {
 	GuildId  string
 	Playing  bool
 	Duration int64
-	Started  time.Time
+	Elapsed  int64
 	Author   string
 	Title    string
 }
@@ -111,7 +111,7 @@ type VoiceConnection struct {
 	Token     string
 	Endpoint  string
 
-	NowPlaying *np
+	NowPlaying *Np
 	Queue      *Queue
 
 	pcm       []int16
@@ -119,7 +119,7 @@ type VoiceConnection struct {
 	OpusSend  chan []byte
 
 	Playing bool
-	paused  bool
+	Paused  bool
 	Volume  float32
 
 	op4 Op4
@@ -140,8 +140,6 @@ type Event struct {
 	Type      string          `json:"t"`
 	RawData   json.RawMessage `json:"d"`
 }
-
-var players = make(map[string]*VoiceConnection, 0)
 
 func (v *VoiceConnection) Open() (err error) {
 	if v.ws != nil {

@@ -1,4 +1,4 @@
-package main
+package gopherlink
 
 import (
 	"context"
@@ -90,9 +90,11 @@ func (v *VoiceConnection) createOpus(udpclose <-chan struct{}, rate int, size in
 	}
 }
 
-func (v *VoiceConnection) musicPlayer(rate int, size int) {
+func (v *VoiceConnection) MusicPlayer(rate int, size int) {
+	v.playerclose = make(chan struct{})
+
 	v.Playing = true
-	v.paused = false
+	v.Paused = false
 	const channels = 2
 
 	//pcmbuf := make([]int16, size*2)
@@ -118,7 +120,7 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 		case <-v.playerclose:
 			return
 		default:
-			if v.paused {
+			if v.Paused {
 				time.Sleep(time.Millisecond * 100)
 				continue
 			}
@@ -142,7 +144,7 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 						for {
 							v.Playing = false
 							info, err := v.Queue.GetNextSong(context.Background())
-							aac, _, err := youtubeToAAC(info.GetURL())
+							aac, _, err := YoutubeToAAC(info.GetURL())
 							if err != nil {
 								if err == ErrNoSongFound {
 									return
@@ -151,18 +153,17 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 							}
 
 							if !v.Reconnecting {
-								pcm, rate := aacToPCM(aac)
+								pcm, rate := AacToPCM(aac)
 								v.pcm = pcm
 								v.playerclose = make(chan struct{})
-								v.NowPlaying = &np{
+								v.NowPlaying = &Np{
 									GuildId:  v.GuildID,
 									Playing:  true,
 									Duration: int64(info.Duration),
-									Started:  time.Now(),
 									Author:   info.Author,
 									Title:    info.Title,
 								}
-								go v.musicPlayer(rate, 960)
+								go v.MusicPlayer(rate, 960)
 								return
 							}
 							log.Println("failed to get next song", err)
@@ -204,4 +205,11 @@ func (v *VoiceConnection) musicPlayer(rate int, size int) {
 		}
 
 	}
+}
+
+func (v *VoiceConnection) GetElapsed() int64 {
+	if v.NowPlaying == nil {
+		return 0
+	}
+	return int64(v.ByteTrack / 96000)
 }
