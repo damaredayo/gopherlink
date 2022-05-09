@@ -113,7 +113,7 @@ type VoiceConnection struct {
 
 	NowPlaying *Np
 	Queue      *Queue
-	Cache      *Cache
+	Cache      Cache
 
 	pcm       []int16
 	ByteTrack int

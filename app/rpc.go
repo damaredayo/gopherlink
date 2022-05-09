@@ -262,7 +262,11 @@ func (r *rpc) CreatePlayer(ctx context.Context, voiceData *pb.DiscordVoiceServer
 	if err != nil {
 		return pr, err
 	}
-	vc.MakeCache()
+
+	err = vc.MakeCache(gopherlink.CacheTypeInternal, nil)
+	if err != nil {
+		return pr, err
+	}
 
 	err = vc.Open()
 	if err != nil {
