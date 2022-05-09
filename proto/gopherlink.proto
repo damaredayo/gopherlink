@@ -36,8 +36,9 @@ message NowPlayingRequest {
 }
 
 message SeekRequest {
-    int64 duration = 1;
-    SeekType type = 2;
+    string guild_id = 1;
+    int64 duration = 2;
+    SeekType type = 3;
 }
 
 message SongInfo {

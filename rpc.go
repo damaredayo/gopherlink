@@ -174,11 +174,20 @@ func (r *rpc) GetQueue(ctx context.Context, req *pb.QueueRequest) (*pb.Queue, er
 }
 
 func (r *rpc) Seek(ctx context.Context, seek *pb.SeekRequest) (*pb.SongInfo, error) {
+	guildId := seek.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+	if player.NowPlaying == nil {
+		return nil, fmt.Errorf("nothing playing")
+	}
+	player.ByteTrack = int(seek.GetDuration()) * 96000
 	ss := &pb.SongInfo{
-		GuildId:  "none",
-		Playing:  pb.PlayStatus_PAUSED,
-		Duration: 1738,
-		Elapsed:  727,
+		GuildId:  guildId,
+		Playing:  pb.PlayStatus_PLAYING,
+		Duration: player.NowPlaying.Duration,
+		Elapsed:  int64(time.Since(player.NowPlaying.Started).Seconds()),
 	}
 	return ss, nil
 }
