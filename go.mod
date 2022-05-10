@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/damaredayo/go-fluent-ffmpeg v0.1.2
-	github.com/damaredayo/goutubedl v0.1.0
+	github.com/damaredayo/goutubedl v0.1.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gorilla/websocket v1.5.0
 	golang.org/x/crypto v0.0.0-20220427172511-eb4f295cb31f

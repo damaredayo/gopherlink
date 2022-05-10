@@ -15,8 +15,8 @@ github.com/cncf/xds/go v0.0.0-20211001041855-01bcc9b48dfe/go.mod h1:eXthEFrGJvWH
 github.com/cncf/xds/go v0.0.0-20211011173535-cb28da3451f1/go.mod h1:eXthEFrGJvWHgFFCl3hGmgk+/aYT6PnTQLykKQRLhEs=
 github.com/damaredayo/go-fluent-ffmpeg v0.1.2 h1:gPLQYHEI50PZDPt3i7PfYmerLrrBUaufgVyRp48zqvo=
 github.com/damaredayo/go-fluent-ffmpeg v0.1.2/go.mod h1:t3Fhgqjqviu+3ZKW172HavmHt0uCtKXOthQbPDHCZFE=
-github.com/damaredayo/goutubedl v0.1.0 h1:SCqZMdvMmVoC6lm5owrVNJ0Ou0FwyK0eIi0ohkkOCsI=
-github.com/damaredayo/goutubedl v0.1.0/go.mod h1:sGX4C3YUZ4CoQiIP7OE2Ax6ttiu4U/gXiba+b/FvG9c=
+github.com/damaredayo/goutubedl v0.1.1 h1:MWfu/wqC4cLsM2NL3tbADdE5gvT9g8r+7/wBYqXIOWM=
+github.com/damaredayo/goutubedl v0.1.1/go.mod h1:sGX4C3YUZ4CoQiIP7OE2Ax6ttiu4U/gXiba+b/FvG9c=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/rVNCu3HqELle0jiPLLBs70cWOduZpkS1E78=
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=

@@ -149,7 +149,12 @@ func (v *VoiceConnection) MusicPlayer(rate int, size int) {
 						}
 						err := v.Skip()
 						if err != nil {
-							log.Println("failed to skip", err)
+							if err != ErrNoNextSong {
+								log.Println("failed to skip", err)
+							}
+							v.Playing = false
+							v.NowPlaying = nil
+							return
 						}
 						return
 					}
@@ -204,6 +209,12 @@ func (v *VoiceConnection) GetDuration() int64 {
 	return int64(len(v.pcm) / 96000)
 }
 
+func (v *VoiceConnection) GetPCMLength() int {
+	v.Mutex.Lock()
+	defer v.Mutex.Unlock()
+	return len(v.pcm)
+}
+
 func (v *VoiceConnection) Skip() error {
 	if v.NowPlaying == nil {
 		return fmt.Errorf("no song playing")
@@ -220,9 +231,7 @@ func (v *VoiceConnection) Skip() error {
 		}
 		nextInfo, err := v.Queue.GetNextSong(context.Background())
 		if err != nil {
-			if err != ErrNoNextSong {
-				return err
-			}
+			return err
 		}
 		aac, info, err = YoutubeToAAC(nextInfo.GetURL())
 		if err != nil {

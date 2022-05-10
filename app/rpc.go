@@ -210,7 +210,11 @@ func (r *rpc) Seek(ctx context.Context, seek *pb.SeekRequest) (*pb.SongInfo, err
 	if player.NowPlaying == nil {
 		return nil, fmt.Errorf("nothing playing")
 	}
-	player.ByteTrack = int(seek.GetDuration()) * 96000
+	newByteTrack := int(seek.GetDuration()) * 96000
+	if newByteTrack > player.GetPCMLength() {
+		return nil, fmt.Errorf("seek too far")
+	}
+	player.ByteTrack = newByteTrack
 	ss := &pb.SongInfo{
 		GuildId:  guildId,
 		Playing:  pb.PlayStatus_PLAYING,
