@@ -5,13 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 
 	"github.com/damaredayo/goutubedl"
 )
 
+var YTDLPath = os.Getenv("YTDL_PATH")
+
 func YoutubeToAAC(url string) (aac []byte, info *goutubedl.Info, err error) {
 
-	goutubedl.Path = "yt-dlp"
+	goutubedl.Path = YTDLPath
 	res, err := goutubedl.New(context.Background(), url, goutubedl.Options{Type: goutubedl.TypeSingle})
 	if err != nil {
 		return nil, nil, err
@@ -36,7 +39,7 @@ func YoutubeToAAC(url string) (aac []byte, info *goutubedl.Info, err error) {
 }
 
 func YoutubeToInfo(url string) (info *goutubedl.Info, err error) {
-	goutubedl.Path = "yt-dlp"
+	goutubedl.Path = YTDLPath
 	res, err := goutubedl.New(context.Background(), url, goutubedl.Options{Type: goutubedl.TypeSingle})
 	if err != nil {
 		return nil, err
