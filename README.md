@@ -5,7 +5,7 @@
 
 <div align="center">
 
-### Gopherlink is a Audio Streaming application/framework designed for ease of use and performance.
+### Gopherlink is a Audio Streaming application/framework for Discord designed for ease of use and performance.
 </div>
 
 # 
