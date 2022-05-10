@@ -27,6 +27,7 @@ type GopherlinkClient interface {
 	CreatePlayer(ctx context.Context, in *DiscordVoiceServer, opts ...grpc.CallOption) (*PlayerResponse, error)
 	AddSong(ctx context.Context, in *SongRequest, opts ...grpc.CallOption) (*SongAdded, error)
 	PauseSong(ctx context.Context, in *SongPauseRequest, opts ...grpc.CallOption) (*SongInfo, error)
+	StopSong(ctx context.Context, in *SongStopRequest, opts ...grpc.CallOption) (*SongInfo, error)
 	RemoveSong(ctx context.Context, in *SongInfo, opts ...grpc.CallOption) (*SongRemoved, error)
 	NowPlaying(ctx context.Context, in *NowPlayingRequest, opts ...grpc.CallOption) (*SongInfo, error)
 	GetQueue(ctx context.Context, in *QueueRequest, opts ...grpc.CallOption) (*Queue, error)
@@ -97,6 +98,15 @@ func (c *gopherlinkClient) AddSong(ctx context.Context, in *SongRequest, opts ..
 func (c *gopherlinkClient) PauseSong(ctx context.Context, in *SongPauseRequest, opts ...grpc.CallOption) (*SongInfo, error) {
 	out := new(SongInfo)
 	err := c.cc.Invoke(ctx, "/database.Gopherlink/PauseSong", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gopherlinkClient) StopSong(ctx context.Context, in *SongStopRequest, opts ...grpc.CallOption) (*SongInfo, error) {
+	out := new(SongInfo)
+	err := c.cc.Invoke(ctx, "/database.Gopherlink/StopSong", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +184,7 @@ type GopherlinkServer interface {
 	CreatePlayer(context.Context, *DiscordVoiceServer) (*PlayerResponse, error)
 	AddSong(context.Context, *SongRequest) (*SongAdded, error)
 	PauseSong(context.Context, *SongPauseRequest) (*SongInfo, error)
+	StopSong(context.Context, *SongStopRequest) (*SongInfo, error)
 	RemoveSong(context.Context, *SongInfo) (*SongRemoved, error)
 	NowPlaying(context.Context, *NowPlayingRequest) (*SongInfo, error)
 	GetQueue(context.Context, *QueueRequest) (*Queue, error)
@@ -199,6 +210,9 @@ func (UnimplementedGopherlinkServer) AddSong(context.Context, *SongRequest) (*So
 }
 func (UnimplementedGopherlinkServer) PauseSong(context.Context, *SongPauseRequest) (*SongInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PauseSong not implemented")
+}
+func (UnimplementedGopherlinkServer) StopSong(context.Context, *SongStopRequest) (*SongInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopSong not implemented")
 }
 func (UnimplementedGopherlinkServer) RemoveSong(context.Context, *SongInfo) (*SongRemoved, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveSong not implemented")
@@ -305,6 +319,24 @@ func _Gopherlink_PauseSong_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GopherlinkServer).PauseSong(ctx, req.(*SongPauseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gopherlink_StopSong_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SongStopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GopherlinkServer).StopSong(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/database.Gopherlink/StopSong",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GopherlinkServer).StopSong(ctx, req.(*SongStopRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -453,6 +485,10 @@ var Gopherlink_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PauseSong",
 			Handler:    _Gopherlink_PauseSong_Handler,
+		},
+		{
+			MethodName: "StopSong",
+			Handler:    _Gopherlink_StopSong_Handler,
 		},
 		{
 			MethodName: "RemoveSong",

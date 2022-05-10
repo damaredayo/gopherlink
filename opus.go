@@ -253,3 +253,17 @@ func (v *VoiceConnection) Skip() error {
 
 	return err
 }
+
+func (v *VoiceConnection) Stop() error {
+	v.Mutex.Lock()
+	defer v.Mutex.Unlock()
+	if v.playerclose == nil {
+		return fmt.Errorf("no song playing")
+	}
+	v.NowPlaying = nil
+	v.Playing = false
+	v.Paused = false
+	v.playerclose <- struct{}{}
+
+	return nil
+}

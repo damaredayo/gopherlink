@@ -133,6 +133,30 @@ func (r *rpc) PauseSong(ctx context.Context, req *pb.SongPauseRequest) (*pb.Song
 	return ss, nil
 }
 
+func (r *rpc) StopSong(ctx context.Context, req *pb.SongStopRequest) (*pb.SongInfo, error) {
+	guildId := req.GetGuildId()
+	player, ok := players[guildId]
+	if !ok {
+		return nil, fmt.Errorf("no player to guildid")
+	}
+
+	if player.NowPlaying == nil {
+		return nil, fmt.Errorf("nothing playing")
+	}
+
+	player.Stop()
+	playing := pb.PlayStatus_STOPPED
+	ss := &pb.SongInfo{
+		GuildId:  guildId,
+		Playing:  playing,
+		Duration: player.NowPlaying.Duration,
+		Elapsed:  player.GetElapsed(),
+		Author:   player.NowPlaying.Author,
+		Title:    player.NowPlaying.Title,
+	}
+	return ss, nil
+}
+
 func (r *rpc) NowPlaying(ctx context.Context, np *pb.NowPlayingRequest) (*pb.SongInfo, error) {
 	guildId := np.GetGuildId()
 	player, ok := players[guildId]

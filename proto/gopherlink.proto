@@ -64,6 +64,10 @@ message SongPauseRequest {
     string guild_id = 1;
 }
 
+message SongStopRequest {
+    string guild_id = 1;
+}
+
 message SongRemoved {
     SongInfo song = 1;
     bool ok = 2;
@@ -128,6 +132,7 @@ service Gopherlink {
 
     rpc AddSong (SongRequest) returns (SongAdded) {}
     rpc PauseSong (SongPauseRequest) returns (SongInfo) {}
+    rpc StopSong (SongStopRequest) returns (SongInfo) {}
     rpc RemoveSong (SongInfo) returns (SongRemoved) {}
     rpc NowPlaying (NowPlayingRequest) returns (SongInfo) {}
     rpc GetQueue (QueueRequest) returns (Queue) {}
