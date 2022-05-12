@@ -6,9 +6,10 @@ import "google/protobuf/empty.proto";
 option go_package = "github.com/damaredayo/gopherlink/proto";
 
 message Status {
-    int64 ok = 1;
-    PlayStatus playing = 2;
-    Usage usage = 3;
+    bool ok = 1;
+    string guild_id = 2;
+    PlayStatus playing = 3;
+    Usage usage = 4;
 }
 
 message Usage {

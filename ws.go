@@ -210,9 +210,9 @@ func (v *VoiceConnection) initListener(wsConn *websocket.Conn, close <-chan stru
 		_, msg, err := v.ws.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, 4014) {
-				v.Mutex.Lock()
+				v.wsMutex.Lock()
 				v.ws = nil
-				v.Mutex.Unlock()
+				v.wsMutex.Unlock()
 
 				v.Close()
 
@@ -225,9 +225,9 @@ func (v *VoiceConnection) initListener(wsConn *websocket.Conn, close <-chan stru
 					log.Printf("websocket failed: %v - %v", ce.Code, ce.Text)
 					v.Close()
 				}
-				v.Mutex.Lock()
+				v.wsMutex.Lock()
 				v.ws = nil
-				v.Mutex.Unlock()
+				v.wsMutex.Unlock()
 
 				v.Close()
 

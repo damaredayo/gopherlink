@@ -24,14 +24,17 @@ type rpc struct {
 func (r *rpc) GetStatusStream(_ *emptypb.Empty, stream pb.Gopherlink_GetStatusStreamServer) error {
 
 	for {
-		stream.Send(&pb.Status{
-			Ok:      r.Ok,
-			Playing: pb.PlayStatus_STOPPED,
-			Usage: &pb.Usage{
-				Ram: rand.Float32() * 100,
-				Cpu: rand.Float32() * 100,
-			},
-		})
+		for k, v := range players {
+			stream.Send(&pb.Status{
+				Ok:      v.Ready,
+				GuildId: k,
+				Playing: pb.PlayStatus_STOPPED,
+				Usage: &pb.Usage{
+					Ram: rand.Float32() * 100,
+					Cpu: rand.Float32() * 100,
+				},
+			})
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
